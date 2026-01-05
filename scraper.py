@@ -78,17 +78,25 @@ db_exists = os.path.exists(DB_FILE)
 new_reviews_list = []
 
 # ---------------- HEADLESS UNDETECTED CHROME ----------------
+# ---------------- HEADLESS UNDETECTED CHROME ----------------
 options = uc.ChromeOptions()
-options.headless = True  # Important for CI
-options.add_argument('--headless')
+options.headless = True
+options.add_argument('--headless=new')  # ← New headless mode (more stable since Chrome 109+)
 options.add_argument('--no-sandbox')
-options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--disable-dev-shm-usage')  # Crucial for GitHub Actions (limited /dev/shm)
 options.add_argument('--disable-gpu')
-options.add_argument('--window-size=1920,1080')
 options.add_argument('--disable-extensions')
 options.add_argument('--disable-infobars')
+options.add_argument('--disable-background-timer-throttling')
+options.add_argument('--disable-renderer-backgrounding')
+options.add_argument('--disable-backgrounding-occluded-windows')
+options.add_argument('--window-size=1920,1080')
+options.add_argument('--disable-features=ImprovedCookieControls,LazyFrameLoading,GlobalMediaControls,DestroyProfileOnBrowserClose,MediaRouter,AcceptCHFrame,AutoExpandDetailsElement')
+options.add_argument('--disable-setuid-sandbox')
+options.add_argument('--allow-running-insecure-content')
+options.add_argument('--disable-web-security')
 
-driver = uc.Chrome(options=options)
+driver = uc.Chrome(options=options, use_subprocess=True)  # use_subprocess helps stability
 wait = WebDriverWait(driver, 30)
 
 # ---------------- MAIN LOOP ----------------
