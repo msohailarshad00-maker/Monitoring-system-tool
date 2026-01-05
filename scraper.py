@@ -1,7 +1,4 @@
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from seleniumbase import Driver
 import pandas as pd
 import time
 import os
@@ -105,47 +102,45 @@ for _, row in profiles.iterrows():
     url = row["Profil"].replace("Google - ", "").strip()
     print(f"\n🔍 Checking: {business} - {url}")
 
-    try:
-        for attempt in range(3):
-            try:
-                driver.get(url)
-                time.sleep(10)
-                break
-            except:
-                print(f"Retry {attempt+1} for {url}")
-                time.sleep(5)
-        else:
-            print(f"Failed to load {url} after 3 attempts")
-            continue
+    # Use SeleniumBase Driver with UC mode (undetected + headless)
+    driver = Driver(
+        browser="chrome",
+        uc=True,                  # ← Undetected mode (bypasses bot detection)
+        headless=True,            # ← Headless (or False if you want headed for testing)
+        incognito=True,
+        disable_csp=True,
+        disable_notifications=True,
+        no_sandbox=True,
+        disable_gpu=True,
+        window_size="1920,1080"
+    )
+    wait = driver.wait  # SeleniumBase has built-in smart waits
 
-        # Click Reviews tab
-        reviews_btn = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//button[@role='tab' and .//div[text()='Reviews']]")
-        ))
-        driver.execute_script("arguments[0].click();", reviews_btn)
-        time.sleep(3)
+    try:
+        driver.get(url)
+        driver.sleep(10)  # Give time to load redirect
+
+        # Click Reviews tab (same XPath works)
+        driver.click('button[role="tab"]:has(div:text("Reviews"))')
+        driver.sleep(5)
 
         # Sort by newest
         try:
-            driver.execute_script("arguments[0].click();", wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//button[@aria-label='Sort reviews']")
-            )))
-            time.sleep(2)
-            driver.execute_script("arguments[0].click();", wait.until(EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, "#fDahXd div:nth-child(2)")
-            )))
+            driver.click('button[aria-label="Sort reviews"]')
+            driver.sleep(2)
+            driver.click('#fDahXd div:nth-child(2)')  # Newest
         except:
             print("Sort failed, continuing...")
 
-        time.sleep(3)
+        driver.sleep(3)
 
         # Scroll
-        scrollable = wait.until(EC.presence_of_element_located((By.XPATH, "//div[@role='main']")))
+        scrollable = driver.find_element(By.XPATH, "//div[@role='main']")
         for _ in range(MAX_SCROLLS):
             driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
-            time.sleep(3)
+            driver.sleep(3)
 
-        # Scrape
+        # Scrape reviews (same selectors)
         reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
         for review in reviews:
             try:
@@ -180,10 +175,8 @@ for _, row in profiles.iterrows():
 
     except Exception as e:
         print(f"⚠️ Error on {business}: {e}")
-        continue
-
-driver.quit()
-
+    finally:
+        driver.quit()  # Always quit!
 # Save persistence files
 pd.DataFrame({"review_id": list(seen_ids)}).to_csv(SEEN_FILE, index=False)
 
