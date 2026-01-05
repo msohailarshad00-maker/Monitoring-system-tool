@@ -1,4 +1,3 @@
-from seleniumbase import Driver
 import pandas as pd
 import time
 import os
@@ -7,6 +6,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from seleniumbase import Driver
+from selenium.webdriver.common.by import By
 
 # ---------------- CONFIG ----------------
 SEEN_FILE = "seen_reviews.csv"
@@ -14,13 +15,13 @@ DB_FILE = "all_bad_reviews_db.csv"
 NEW_FILE = "new_bad_reviews.xlsx"
 
 EMAIL_FROM = "markcraft494@gmail.com"
-EMAIL_TO = os.environ.get("EMAIL_TO", "msohailarshad00@gmail.com")  # fallback
+EMAIL_TO = os.environ.get("EMAIL_TO", "msohailarshad00@gmail.com")
 EMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-MAX_SCROLLS = 3  # Increase a bit for reliability
+MAX_SCROLLS = 4  # Increased for reliability
 
 SPREADSHEET_ID = "1dX6iCgY6B8drj1ZwW6VorDT6G3tUU2h2PBz5Xst5jPQ"
-WORKSHEET_NAME = "Sheet1"
+WORKSHEET_NAME = "Sheet1"  # Change if your tab name is different
 
 # ---------------- EMAIL FUNCTION ----------------
 def send_email_with_attachment(file_path, new_count):
@@ -69,32 +70,10 @@ except Exception as e:
     print(f"❌ Google Sheet error: {e}")
     raise
 
-# Load persisted files
+# Load persistence files
 seen_ids = set(pd.read_csv(SEEN_FILE)["review_id"]) if os.path.exists(SEEN_FILE) else set()
 db_exists = os.path.exists(DB_FILE)
 new_reviews_list = []
-
-# ---------------- HEADLESS UNDETECTED CHROME ----------------
-# ---------------- HEADLESS UNDETECTED CHROME ----------------
-# ---------------- HEADLESS UNDETECTED CHROME ----------------
-options = uc.ChromeOptions()
-options.headless = True
-options.add_argument('--headless=new')                  # New stable headless mode
-options.add_argument('--no-sandbox')                    # Required in CI
-options.add_argument('--disable-dev-shm-usage')         # Fixes memory crash in GitHub Actions
-options.add_argument('--disable-gpu')
-options.add_argument('--disable-extensions')
-options.add_argument('--disable-infobars')
-options.add_argument('--disable-background-timer-throttling')
-options.add_argument('--disable-renderer-backgrounding')
-options.add_argument('--disable-backgrounding-occluded-windows')
-options.add_argument('--window-size=1920,1080')
-options.add_argument('--disable-setuid-sandbox')
-options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
-options.add_argument('--disable-ipc-flooding-protection')
-
-driver = uc.Chrome(options=options, use_subprocess=True)  # Helps prevent crashes
-wait = WebDriverWait(driver, 60)  # Increase timeout a bit
 
 # ---------------- MAIN LOOP ----------------
 for _, row in profiles.iterrows():
@@ -102,26 +81,23 @@ for _, row in profiles.iterrows():
     url = row["Profil"].replace("Google - ", "").strip()
     print(f"\n🔍 Checking: {business} - {url}")
 
-    # Use SeleniumBase Driver with UC mode (undetected + headless)
+    # SeleniumBase UC Mode Driver (undetected + headless)
     driver = Driver(
-        browser="chrome",
-        uc=True,                  # ← Undetected mode (bypasses bot detection)
-        headless=True,            # ← Headless (or False if you want headed for testing)
+        uc=True,                # Undetected mode
+        headless=True,          # Headless for GitHub Actions
         incognito=True,
         disable_csp=True,
-        disable_notifications=True,
         no_sandbox=True,
         disable_gpu=True,
         window_size="1920,1080"
     )
-    wait = driver.wait  # SeleniumBase has built-in smart waits
 
     try:
-        driver.get(url)
-        driver.sleep(10)  # Give time to load redirect
+        driver.open(url)
+        driver.sleep(12)  # Wait for maps.app.goo.gl redirect
 
-        # Click Reviews tab (same XPath works)
-        driver.click('button[role="tab"]:has(div:text("Reviews"))')
+        # Click Reviews tab
+        driver.click('button[role="tab"]:has-text("Reviews")', timeout=30)
         driver.sleep(5)
 
         # Sort by newest
@@ -129,18 +105,17 @@ for _, row in profiles.iterrows():
             driver.click('button[aria-label="Sort reviews"]')
             driver.sleep(2)
             driver.click('#fDahXd div:nth-child(2)')  # Newest
+            driver.sleep(3)
         except:
-            print("Sort failed, continuing...")
-
-        driver.sleep(3)
+            print("Sort failed - continuing")
 
         # Scroll
         scrollable = driver.find_element(By.XPATH, "//div[@role='main']")
         for _ in range(MAX_SCROLLS):
             driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
-            driver.sleep(3)
+            driver.sleep(4)
 
-        # Scrape reviews (same selectors)
+        # Scrape reviews
         reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
         for review in reviews:
             try:
@@ -148,7 +123,8 @@ for _, row in profiles.iterrows():
                 if not review_id or review_id in seen_ids:
                     continue
 
-                rating = int(review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label").split()[0])
+                rating_str = review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label")
+                rating = int(rating_str.split()[0]) if rating_str else 5
                 if rating > 3:
                     continue
 
@@ -176,8 +152,9 @@ for _, row in profiles.iterrows():
     except Exception as e:
         print(f"⚠️ Error on {business}: {e}")
     finally:
-        driver.quit()  # Always quit!
-# Save persistence files
+        driver.quit()
+
+# ---------------- SAVE & EMAIL ----------------
 pd.DataFrame({"review_id": list(seen_ids)}).to_csv(SEEN_FILE, index=False)
 
 if new_reviews_list:
