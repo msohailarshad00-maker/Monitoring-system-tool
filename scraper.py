@@ -97,7 +97,7 @@ options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
 options.add_argument('--disable-ipc-flooding-protection')
 
 driver = uc.Chrome(options=options, use_subprocess=True)  # Helps prevent crashes
-wait = WebDriverWait(driver, 40)  # Increase timeout a bit
+wait = WebDriverWait(driver, 60)  # Increase timeout a bit
 
 # ---------------- MAIN LOOP ----------------
 for _, row in profiles.iterrows():
