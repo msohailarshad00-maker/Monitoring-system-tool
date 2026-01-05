@@ -34,6 +34,5 @@ jobs:
         run: |
           git config --global user.name "Bot"
           git config --global user.email "bot@github.com"
-          git add seen_reviews.csv all_bad_reviews_db.csv
-          git commit -m "Update seen and db files" || echo "No changes"
-          git push
+          git add seen_reviews.csv all_bad_reviews_db.csv || true
+          git diff --staged --quiet && echo "No changes to commit" || (git commit -m "Update seen and db files" && git push)
