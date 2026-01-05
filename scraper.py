@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-from seleniumbase import Driver
+from seleniumbase import SB
 from selenium.webdriver.common.by import By
 
 # ---------------- CONFIG ----------------
@@ -18,10 +18,10 @@ EMAIL_FROM = "markcraft494@gmail.com"
 EMAIL_TO = os.environ.get("EMAIL_TO", "msohailarshad00@gmail.com")
 EMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-MAX_SCROLLS = 4  # Increased for reliability
+MAX_SCROLLS = 4
 
 SPREADSHEET_ID = "1dX6iCgY6B8drj1ZwW6VorDT6G3tUU2h2PBz5Xst5jPQ"
-WORKSHEET_NAME = "Sheet1"  # Change if your tab name is different
+WORKSHEET_NAME = "Sheet1"
 
 # ---------------- EMAIL FUNCTION ----------------
 def send_email_with_attachment(file_path, new_count):
@@ -76,83 +76,74 @@ db_exists = os.path.exists(DB_FILE)
 new_reviews_list = []
 
 # ---------------- MAIN LOOP ----------------
-for _, row in profiles.iterrows():
-    business = row["Name"]
-    url = row["Profil"].replace("Google - ", "").strip()
-    print(f"\n🔍 Checking: {business} - {url}")
+with SB(uc=True, xvfb=True) as sb:  # ← Key: SB + xvfb for undetected on Linux CI
+    driver = sb.driver  # Access raw driver if needed
 
-    # SeleniumBase UC Mode Driver (undetected + headless)
-    driver = Driver(
-        uc=True,                # Undetected mode
-        headless=True,          # Headless for GitHub Actions
-        incognito=True,
-        disable_csp=True,
-        no_sandbox=True,
-        disable_gpu=True,
-        window_size="1920,1080"
-    )
+    for _, row in profiles.iterrows():
+        business = row["Name"]
+        url = row["Profil"].replace("Google - ", "").strip()
+        print(f"\n🔍 Checking: {business} - {url}")
 
-    try:
-        driver.open(url)
-        driver.sleep(12)  # Wait for maps.app.goo.gl redirect
-
-        # Click Reviews tab
-        driver.click('button[role="tab"]:has-text("Reviews")', timeout=30)
-        driver.sleep(5)
-
-        # Sort by newest
         try:
-            driver.click('button[aria-label="Sort reviews"]')
-            driver.sleep(2)
-            driver.click('#fDahXd div:nth-child(2)')  # Newest
-            driver.sleep(3)
-        except:
-            print("Sort failed - continuing")
+            sb.open(url)
+            sb.sleep(12)  # Wait for redirect
 
-        # Scroll
-        scrollable = driver.find_element(By.XPATH, "//div[@role='main']")
-        for _ in range(MAX_SCROLLS):
-            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
-            driver.sleep(4)
+            # Click Reviews tab
+            sb.click('button[role="tab"]:has-text("Reviews")', timeout=30)
+            sb.sleep(5)
 
-        # Scrape reviews
-        reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
-        for review in reviews:
+            # Sort by newest
             try:
-                review_id = review.get_attribute("data-review-id")
-                if not review_id or review_id in seen_ids:
+                sb.click('button[aria-label="Sort reviews"]')
+                sb.sleep(2)
+                sb.click('#fDahXd div:nth-child(2)')
+                sb.sleep(3)
+            except:
+                print("Sort failed - continuing")
+
+            # Scroll
+            scrollable = driver.find_element(By.XPATH, "//div[@role='main']")
+            for _ in range(MAX_SCROLLS):
+                sb.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
+                sb.sleep(4)
+
+            # Scrape reviews
+            reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
+            for review in reviews:
+                try:
+                    review_id = review.get_attribute("data-review-id")
+                    if not review_id or review_id in seen_ids:
+                        continue
+
+                    rating_str = review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label")
+                    rating = int(rating_str.split()[0]) if rating_str else 5
+                    if rating > 3:
+                        continue
+
+                    record = row.to_dict()
+                    record.update({
+                        "Reviewer Name": review.find_element(By.CSS_SELECTOR, "div.d4r55").text,
+                        "Rating": rating,
+                        "Review Date": review.find_element(By.CSS_SELECTOR, "span.rsqaWe").text,
+                        "Review Text": review.find_element(By.CSS_SELECTOR, "span.wiI7pd").text,
+                        "Profile Image URL": review.find_element(By.CSS_SELECTOR, "img.NBa7we").get_attribute("src"),
+                        "Review ID": review_id,
+                        "Source URL": url,
+                        "Scraped At": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+
+                    new_reviews_list.append(record)
+                    pd.DataFrame([record]).to_csv(DB_FILE, mode="a", header=not db_exists, index=False)
+                    db_exists = True
+                    seen_ids.add(review_id)
+
+                except Exception as e:
+                    print(f"Review scrape error: {e}")
                     continue
 
-                rating_str = review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label")
-                rating = int(rating_str.split()[0]) if rating_str else 5
-                if rating > 3:
-                    continue
-
-                record = row.to_dict()
-                record.update({
-                    "Reviewer Name": review.find_element(By.CSS_SELECTOR, "div.d4r55").text,
-                    "Rating": rating,
-                    "Review Date": review.find_element(By.CSS_SELECTOR, "span.rsqaWe").text,
-                    "Review Text": review.find_element(By.CSS_SELECTOR, "span.wiI7pd").text,
-                    "Profile Image URL": review.find_element(By.CSS_SELECTOR, "img.NBa7we").get_attribute("src"),
-                    "Review ID": review_id,
-                    "Source URL": url,
-                    "Scraped At": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
-
-                new_reviews_list.append(record)
-                pd.DataFrame([record]).to_csv(DB_FILE, mode="a", header=not db_exists, index=False)
-                db_exists = True
-                seen_ids.add(review_id)
-
-            except Exception as e:
-                print(f"Review scrape error: {e}")
-                continue
-
-    except Exception as e:
-        print(f"⚠️ Error on {business}: {e}")
-    finally:
-        driver.quit()
+        except Exception as e:
+            print(f"⚠️ Error on {business}: {e}")
+            continue
 
 # ---------------- SAVE & EMAIL ----------------
 pd.DataFrame({"review_id": list(seen_ids)}).to_csv(SEEN_FILE, index=False)
