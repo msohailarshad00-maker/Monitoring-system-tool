@@ -106,8 +106,17 @@ for _, row in profiles.iterrows():
     print(f"\n🔍 Checking: {business} - {url}")
 
     try:
-        driver.get(url)
-        time.sleep(5)
+        for attempt in range(3):
+            try:
+                driver.get(url)
+                time.sleep(10)
+                break
+            except:
+                print(f"Retry {attempt+1} for {url}")
+                time.sleep(5)
+        else:
+            print(f"Failed to load {url} after 3 attempts")
+            continue
 
         # Click Reviews tab
         reviews_btn = wait.until(EC.element_to_be_clickable(
