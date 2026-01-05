@@ -18,10 +18,10 @@ EMAIL_FROM = "markcraft494@gmail.com"
 EMAIL_TO = os.environ.get("EMAIL_TO", "msohailarshad00@gmail.com")
 EMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-MAX_SCROLLS = 4
+MAX_SCROLLS = 4  # Adjust if needed
 
 SPREADSHEET_ID = "1dX6iCgY6B8drj1ZwW6VorDT6G3tUU2h2PBz5Xst5jPQ"
-WORKSHEET_NAME = "Sheet1"
+WORKSHEET_NAME = "Sheet1"  # Change if different
 
 # ---------------- EMAIL FUNCTION ----------------
 def send_email_with_attachment(file_path, new_count):
@@ -70,14 +70,14 @@ except Exception as e:
     print(f"❌ Google Sheet error: {e}")
     raise
 
-# Load persistence files
+# Load persistence
 seen_ids = set(pd.read_csv(SEEN_FILE)["review_id"]) if os.path.exists(SEEN_FILE) else set()
 db_exists = os.path.exists(DB_FILE)
 new_reviews_list = []
 
 # ---------------- MAIN LOOP ----------------
-with SB(uc=True, xvfb=True) as sb:  # ← Key: SB + xvfb for undetected on Linux CI
-    driver = sb.driver  # Access raw driver if needed
+with SB(uc=True, xvfb=True, locale_code="de") as sb:  # Undetected + virtual display + German
+    driver = sb.driver
 
     for _, row in profiles.iterrows():
         business = row["Name"]
@@ -85,27 +85,35 @@ with SB(uc=True, xvfb=True) as sb:  # ← Key: SB + xvfb for undetected on Linux
         print(f"\n🔍 Checking: {business} - {url}")
 
         try:
-            sb.open(url)
-            sb.sleep(12)  # Wait for redirect
+            sb.uc_open_with_reconnect(url, reconnect_time=10)
+            sb.sleep(20)  # Long wait for full load + redirect
 
-            # Click Reviews tab
-            sb.click('button[role="tab"]:has-text("Reviews")', timeout=30)
-            sb.sleep(5)
+            # Handle consent
+            try:
+                sb.uc_click('button:contains("Alle akzeptieren")', timeout=15)
+                sb.sleep(4)
+            except:
+                pass
+
+            # Click Reviews tab (reliable 2026 XPath for "Bewertungen" or "Reviews")
+            reviews_tab_xpath = "//button[@role='tab' and (contains(@aria-label, 'Bewertungen') or contains(@aria-label, 'Reviews') or .//div[text()='Bewertungen' or text()='Reviews'])]"
+            sb.uc_click(reviews_tab_xpath, timeout=40)
+            sb.sleep(8)
 
             # Sort by newest
             try:
-                sb.click('button[aria-label="Sort reviews"]')
-                sb.sleep(2)
-                sb.click('#fDahXd div:nth-child(2)')
+                sb.uc_click('button[aria-label*="Sortieren" or aria-label*="Sort"]', timeout=15)
                 sb.sleep(3)
+                sb.uc_click('//div[contains(text(), "Neueste") or contains(text(), "Newest")]', timeout=15)
+                sb.sleep(5)
             except:
                 print("Sort failed - continuing")
 
-            # Scroll
-            scrollable = driver.find_element(By.XPATH, "//div[@role='main']")
+            # Scroll reviews pane
+            scrollable = driver.find_element(By.XPATH, "//div[@role='main']//div[contains(@class, 'm6QErb')]")
             for _ in range(MAX_SCROLLS):
                 sb.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
-                sb.sleep(4)
+                sb.sleep(6)
 
             # Scrape reviews
             reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
@@ -116,7 +124,7 @@ with SB(uc=True, xvfb=True) as sb:  # ← Key: SB + xvfb for undetected on Linux
                         continue
 
                     rating_str = review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label")
-                    rating = int(rating_str.split()[0]) if rating_str else 5
+                    rating = int(''.join(filter(str.isdigit, rating_str))) if rating_str else 5
                     if rating > 3:
                         continue
 
@@ -138,7 +146,7 @@ with SB(uc=True, xvfb=True) as sb:  # ← Key: SB + xvfb for undetected on Linux
                     seen_ids.add(review_id)
 
                 except Exception as e:
-                    print(f"Review scrape error: {e}")
+                    print(f"Single review error: {e}")
                     continue
 
         except Exception as e:
