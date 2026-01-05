@@ -8,6 +8,8 @@ from email.mime.base import MIMEBase
 from email import encoders
 from seleniumbase import SB
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # ---------------- CONFIG ----------------
 SEEN_FILE = "seen_reviews.csv"
@@ -18,10 +20,10 @@ EMAIL_FROM = "markcraft494@gmail.com"
 EMAIL_TO = os.environ.get("EMAIL_TO", "msohailarshad00@gmail.com")
 EMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-MAX_SCROLLS = 4  # Adjust if needed
+MAX_SCROLLS = 4
 
 SPREADSHEET_ID = "1dX6iCgY6B8drj1ZwW6VorDT6G3tUU2h2PBz5Xst5jPQ"
-WORKSHEET_NAME = "Sheet1"  # Change if different
+WORKSHEET_NAME = "Sheet1"
 
 # ---------------- EMAIL FUNCTION ----------------
 def send_email_with_attachment(file_path, new_count):
@@ -76,8 +78,9 @@ db_exists = os.path.exists(DB_FILE)
 new_reviews_list = []
 
 # ---------------- MAIN LOOP ----------------
-with SB(uc=True, xvfb=True, locale_code="de") as sb:  # Undetected + virtual display + German
+with SB(uc=True, xvfb=True, locale_code="de") as sb:
     driver = sb.driver
+    wait = WebDriverWait(driver, 40)
 
     for _, row in profiles.iterrows():
         business = row["Name"]
@@ -86,36 +89,39 @@ with SB(uc=True, xvfb=True, locale_code="de") as sb:  # Undetected + virtual dis
 
         try:
             sb.uc_open_with_reconnect(url, reconnect_time=10)
-            sb.sleep(20)  # Long wait for full load + redirect
+            sb.sleep(20)  # Full load after redirect
 
-            # Handle consent
+            # Handle Google Consent Banner (critical!)
             try:
-                sb.uc_click('button:contains("Alle akzeptieren")', timeout=15)
-                sb.sleep(4)
-            except:
-                pass
-
-            # Click Reviews tab (reliable 2026 XPath for "Bewertungen" or "Reviews")
-            reviews_tab_xpath = "//button[@role='tab' and (contains(@aria-label, 'Bewertungen') or contains(@aria-label, 'Reviews') or .//div[text()='Bewertungen' or text()='Reviews'])]"
-            sb.uc_click(reviews_tab_xpath, timeout=40)
-            sb.sleep(8)
-
-            # Sort by newest
-            try:
-                sb.uc_click('button[aria-label*="Sortieren" or aria-label*="Sort"]', timeout=15)
-                sb.sleep(3)
-                sb.uc_click('//div[contains(text(), "Neueste") or contains(text(), "Newest")]', timeout=15)
+                consent_iframe = wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[contains(@src, 'consent.google.com') or contains(@src, 'consent')]")))
+                accept_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button//span[text()='Alle akzeptieren' or text()='Accept all']")))
+                accept_button.click()
+                driver.switch_to.default_content()
                 sb.sleep(5)
             except:
-                print("Sort failed - continuing")
+                driver.switch_to.default_content()  # If no iframe
+                print("No consent banner or already accepted")
 
-            # Scroll reviews pane
-            scrollable = driver.find_element(By.XPATH, "//div[@role='main']//div[contains(@class, 'm6QErb')]")
+            # Click "Bewertungen" tab - Simple & reliable text click (2026 working)
+            sb.uc_click("text=Bewertungen", timeout=40)
+            sb.sleep(8)
+
+            # Sort by newest (optional fallback)
+            try:
+                sb.uc_click('button[aria-label*="Sortieren"]', timeout=15)
+                sb.sleep(3)
+                sb.uc_click("text=Neueste", timeout=15)
+                sb.sleep(5)
+            except:
+                print("Sort not available - using default")
+
+            # Scroll reviews
+            scrollable = driver.find_element(By.XPATH, "//div[contains(@class, 'm6QErb') and @role!='none']//div[contains(@class, 'm6QErb')]")
             for _ in range(MAX_SCROLLS):
                 sb.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable)
                 sb.sleep(6)
 
-            # Scrape reviews
+            # Scrape reviews (your original - works great)
             reviews = driver.find_elements(By.CSS_SELECTOR, "div.jftiEf")
             for review in reviews:
                 try:
@@ -124,7 +130,7 @@ with SB(uc=True, xvfb=True, locale_code="de") as sb:  # Undetected + virtual dis
                         continue
 
                     rating_str = review.find_element(By.CSS_SELECTOR, "span.kvMYJc").get_attribute("aria-label")
-                    rating = int(''.join(filter(str.isdigit, rating_str))) if rating_str else 5
+                    rating = int(''.join(filter(str.isdigit, rating_str.split()[0]))) if rating_str else 5
                     if rating > 3:
                         continue
 
