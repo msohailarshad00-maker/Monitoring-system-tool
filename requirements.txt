@@ -1,4 +1,4 @@
-undetected-chromedriver
+seleniumbase>=4.0.0
 pandas
 gspread
 oauth2client
