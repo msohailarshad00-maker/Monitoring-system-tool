@@ -79,11 +79,12 @@ new_reviews_list = []
 
 # ---------------- HEADLESS UNDETECTED CHROME ----------------
 # ---------------- HEADLESS UNDETECTED CHROME ----------------
+# ---------------- HEADLESS UNDETECTED CHROME ----------------
 options = uc.ChromeOptions()
 options.headless = True
-options.add_argument('--headless=new')  # ← New headless mode (more stable since Chrome 109+)
-options.add_argument('--no-sandbox')
-options.add_argument('--disable-dev-shm-usage')  # Crucial for GitHub Actions (limited /dev/shm)
+options.add_argument('--headless=new')                  # New stable headless mode
+options.add_argument('--no-sandbox')                    # Required in CI
+options.add_argument('--disable-dev-shm-usage')         # Fixes memory crash in GitHub Actions
 options.add_argument('--disable-gpu')
 options.add_argument('--disable-extensions')
 options.add_argument('--disable-infobars')
@@ -91,13 +92,12 @@ options.add_argument('--disable-background-timer-throttling')
 options.add_argument('--disable-renderer-backgrounding')
 options.add_argument('--disable-backgrounding-occluded-windows')
 options.add_argument('--window-size=1920,1080')
-options.add_argument('--disable-features=ImprovedCookieControls,LazyFrameLoading,GlobalMediaControls,DestroyProfileOnBrowserClose,MediaRouter,AcceptCHFrame,AutoExpandDetailsElement')
 options.add_argument('--disable-setuid-sandbox')
-options.add_argument('--allow-running-insecure-content')
-options.add_argument('--disable-web-security')
+options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
+options.add_argument('--disable-ipc-flooding-protection')
 
-driver = uc.Chrome(options=options, use_subprocess=True)  # use_subprocess helps stability
-wait = WebDriverWait(driver, 30)
+driver = uc.Chrome(options=options, use_subprocess=True)  # Helps prevent crashes
+wait = WebDriverWait(driver, 40)  # Increase timeout a bit
 
 # ---------------- MAIN LOOP ----------------
 for _, row in profiles.iterrows():
